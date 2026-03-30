@@ -1,170 +1,180 @@
 # ptd-cli
 
-Command-line interface for the [PT-Depiler](https://github.com/pt-plugins/PT-depiler) browser extension via Chrome Native Messaging.
+[English](README.en.md)
 
-Search torrents, manage downloads, query user info, and manage cross-seeding tasks from the terminal — all operations execute through the running browser extension, reusing its cookies, site definitions, and downloader configurations.
+[PT-Depiler](https://github.com/pt-plugins/PT-depiler) 浏览器扩展的命令行工具，通过 Chrome Native Messaging 与扩展通信。
 
-## Architecture
+在终端中搜索种子、管理下载、查询用户信息、管理辅种任务——所有操作通过运行中的浏览器扩展执行，复用其 Cookie、站点配置和下载器设置。
+
+## 架构
 
 ```
 ptd search "avatar" --site chdbits
   |
   v
-Unix socket --> ptd-host daemon --stdout--> Chrome --> Extension bridge
+Unix socket --> ptd-host 守护进程 --stdout--> Chrome --> 扩展通信桥
                                                           |
                                                     sendMessage("getSiteSearchResult", {...})
                                                           |
-                                                    offscreen handlers (HTTP + DOM parsing)
+                                                    offscreen 处理器 (HTTP + DOM 解析)
                                                           |
 CLI <-- Unix socket <-- ptd-host <--stdin-- Chrome <------+
 ```
 
-Three components:
+三个组件：
 
-- **`ptd`** — CLI client. Discovers running browser instances, connects via Unix socket, sends commands, prints results.
-- **`ptd-host`** — Native messaging host daemon. Chrome spawns one per browser profile. Bridges CLI requests to the extension and routes responses back.
-- **Extension bridge** — Small addition to PT-Depiler's background script. Dispatches CLI requests through the existing `sendMessage()` system.
+- **`ptd`** — CLI 客户端。发现运行中的浏览器实例，通过 Unix socket 连接，发送命令，输出结果。
+- **`ptd-host`** — Native messaging 守护进程。Chrome 为每个浏览器配置文件启动一个实例，负责桥接 CLI 请求到扩展并路由响应。
+- **扩展通信桥** — PT-Depiler 后台脚本中的模块，通过已有的 `sendMessage()` 系统分发 CLI 请求。
 
-## Install
+## 安装
 
-### 1. Build from source
+### 1. 从源码构建
 
 ```bash
 cargo build --release
-# Produces target/release/ptd and target/release/ptd-host
+# 生成 target/release/ptd 和 target/release/ptd-host
 ```
 
-Place both `ptd` and `ptd-host` in the same directory, and add it to your `PATH`.
+将 `ptd` 和 `ptd-host` 放在同一目录下，并添加到 `PATH`。
 
-### 2. Register the native messaging host
+### 2. 注册 Native Messaging Host
 
-> **Important:** Complete this step **before** installing or enabling the PT-Depiler extension.
-> Chrome only reads native messaging host registrations at startup.
-> If you register the host while Chrome is already running, you must **fully quit Chrome** (including background processes) and relaunch it.
-> On Windows, use `taskkill /f /im chrome.exe` or check the system tray — simply closing the window is not enough if "Continue running background apps when Google Chrome is closed" is enabled.
+> **重要：** 请在安装或启用 PT-Depiler 扩展**之前**完成此步骤。
+> Chrome 仅在启动时读取 native messaging host 注册信息。
+> 如果在 Chrome 运行时注册，必须**完全退出 Chrome**（包括后台进程）后重新启动。
+> Windows 上请使用 `taskkill /f /im chrome.exe` 或检查系统托盘——如果开启了"关闭 Google Chrome 后继续运行后台应用"，仅关闭窗口是不够的。
 
 ```bash
 # Chrome
-ptd install --browser chrome --extension-id <YOUR_EXTENSION_ID>
+ptd install --browser chrome --extension-id <扩展ID>
 
 # Firefox
 ptd install --browser firefox
 
 # Chromium / Edge
-ptd install --browser chromium --extension-id <ID>
-ptd install --browser edge --extension-id <ID>
+ptd install --browser chromium --extension-id <扩展ID>
+ptd install --browser edge --extension-id <扩展ID>
 ```
 
-Find your extension ID at `chrome://extensions` with Developer Mode enabled.
+扩展 ID 可在 `chrome://extensions` 中开启开发者模式后查看。
 
-### 3. Verify
+### 3. 在扩展中启用
+
+打开 PT-Depiler 扩展设置页，进入 **设置 > 常规设置 > 原生通信桥** 标签页：
+
+1. 点击 **授予权限** 启用 `nativeMessaging` 权限
+2. 开启 **启用原生通信桥** 开关
+3. 点击 **测试连接** 验证连接
+
+### 4. 验证
 
 ```bash
 ptd status
-# Should show a healthy instance
+# 应显示一个健康的实例
 ```
 
-If `ptd status` shows no instances, make sure:
-1. The browser is running with the PT-Depiler extension enabled
-2. You fully restarted the browser after running `ptd install`
-3. The extension has the `nativeMessaging` permission
+如果 `ptd status` 未显示实例，请确认：
+1. 浏览器正在运行且已启用 PT-Depiler 扩展
+2. 运行 `ptd install` 后已完全重启浏览器
+3. 扩展已授予 `nativeMessaging` 权限并启用了原生通信桥
 
-## Usage
+## 使用
 
-### Search
+### 搜索
 
 ```bash
-# Search all configured sites
+# 搜索所有已配置站点
 ptd search "avatar"
 
-# Search specific sites
+# 搜索指定站点
 ptd search "avatar" --site chdbits
 ptd search "avatar" --site chdbits --site btschool
 
-# Pretty print results
+# 格式化输出
 ptd search "avatar" --site chdbits --pretty
 
-# Advanced search with entry file
+# 使用搜索配置文件进行高级搜索
 ptd search "avatar" --site chdbits --entry-file ./search-config.json
 ```
 
-### Download
+### 下载
 
 ```bash
-# Download by index from last search results
-ptd download 0 --downloader <downloader-id>
+# 按上次搜索结果的索引下载
+ptd download 0 --downloader <下载器ID>
 
-# Download with full option file
+# 使用完整选项文件下载
 ptd download --option-file ./download-option.json
 ```
 
-### Downloader
+### 下载器
 
 ```bash
-ptd downloader status <downloader-id>
-ptd downloader config <downloader-id>
-ptd downloader version <downloader-id>
+ptd downloader status <下载器ID>
+ptd downloader config <下载器ID>
+ptd downloader version <下载器ID>
 ```
 
-### User Info
+### 用户信息
 
 ```bash
-ptd user-info current <site-id>          # Fetch live user stats
-ptd user-info history <site-id>          # View historical data
-ptd user-info remove <site-id> <dates>   # Remove entries
-ptd user-info cancel                     # Cancel pending fetches
+ptd user-info current <站点ID>          # 获取实时用户数据
+ptd user-info history <站点ID>          # 查看历史数据
+ptd user-info remove <站点ID> <日期>    # 删除记录
+ptd user-info cancel                    # 取消待处理的请求
 ```
 
-### Site Config
+### 站点配置
 
 ```bash
-ptd site config <site-id>
-ptd site favicon <site-id> [--flush]
+ptd site config <站点ID>
+ptd site favicon <站点ID> [--flush]
 ```
 
-### Download History
+### 下载历史
 
 ```bash
-ptd download-history                     # List all
-ptd download-history get <id>            # Get specific entry
-ptd download-history delete <id>         # Delete entry
-ptd download-history clear               # Clear all
+ptd download-history                     # 列出所有记录
+ptd download-history get <id>            # 查看指定记录
+ptd download-history delete <id>         # 删除记录
+ptd download-history clear               # 清空所有记录
 ```
 
-### Keep-Upload (Cross-Seeding)
+### 辅种任务
 
 ```bash
 ptd keep-upload list
-ptd keep-upload get <task-id>
+ptd keep-upload get <任务ID>
 ptd keep-upload create --file ./task.json
 ptd keep-upload update --file ./task.json
-ptd keep-upload delete <task-id>
+ptd keep-upload delete <任务ID>
 ptd keep-upload clear
 ```
 
-### Setup & Discovery
+### 安装与发现
 
 ```bash
-ptd install --browser chrome --extension-id <id>
+ptd install --browser chrome --extension-id <扩展ID>
 ptd uninstall --browser chrome
 ptd status
 ```
 
-## Global Options
+## 全局选项
 
 ```
---instance <id>       Select browser/profile instance (prefix match, e.g. --instance fe4c)
---timeout <seconds>   Request timeout (default: 30)
---format <format>     Output format: json (default), pretty, table
---pretty              Alias for --format pretty
---table               Alias for --format table
+--instance <id>       选择浏览器/配置实例（前缀匹配，如 --instance fe4c）
+--timeout <秒数>      请求超时时间（默认：30）
+--format <格式>       输出格式：json（默认）、pretty、table
+--pretty              --format pretty 的简写
+--table               --format table 的简写
 ```
 
-Environment variable: `PTD_INSTANCE=<id>`
+环境变量：`PTD_INSTANCE=<id>`
 
-## Multi-Instance Support
+## 多实例支持
 
-If you run multiple browsers or profiles with PT-Depiler, each gets its own daemon and socket. The CLI auto-selects when only one is running:
+如果你运行多个浏览器或配置文件，每个都会有自己的守护进程和 socket。只有一个运行时 CLI 会自动选择：
 
 ```bash
 $ ptd status
@@ -173,27 +183,27 @@ $ ptd status
 
 2 instance(s), 2 healthy
 
-$ ptd --instance fe4c search "test" --site chdbits   # prefix match
+$ ptd --instance fe4c search "test" --site chdbits   # 前缀匹配
 ```
 
-## Exit Codes
+## 退出码
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Command failed (extension error, timeout, bad input) |
-| 2 | No healthy instance found |
-| 3 | Multiple instances, none selected |
+| 退出码 | 含义 |
+|--------|------|
+| 0 | 成功 |
+| 1 | 命令失败（扩展错误、超时、输入错误） |
+| 2 | 未找到健康的实例 |
+| 3 | 存在多个实例，未指定选择 |
 
-## Output
+## 输出
 
-Default output is compact JSON, suitable for piping to `jq`:
+默认输出紧凑 JSON，适合通过管道传递给 `jq`：
 
 ```bash
 ptd search "test" --site chdbits | jq '.[0].title'
 ptd user-info current chdbits | jq '.ratio'
 ```
 
-## License
+## 许可证
 
 MIT
