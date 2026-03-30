@@ -22,6 +22,7 @@ pub const ALLOWED_METHODS: &[&str] = &[
     "getExtStorage",
     "getLogger",
     // Site config
+    "getSiteList",
     "getSiteUserConfig",
     "getSiteFavicon",
     "clearSiteFaviconCache",
@@ -29,6 +30,7 @@ pub const ALLOWED_METHODS: &[&str] = &[
     "getSiteSearchResult",
     "getMediaServerSearchResult",
     // Download and downloader
+    "getDownloaderList",
     "getDownloaderConfig",
     "getDownloaderVersion",
     "getDownloaderStatus",

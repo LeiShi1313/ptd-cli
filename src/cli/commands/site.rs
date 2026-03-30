@@ -12,6 +12,8 @@ pub struct SiteArgs {
 
 #[derive(Subcommand)]
 pub enum SiteCommand {
+    /// List all configured site IDs
+    List,
     /// Get site user config
     Config { site_id: String },
     /// Get site favicon (base64)
@@ -25,6 +27,9 @@ pub enum SiteCommand {
 
 pub fn run(args: SiteArgs, instance: Option<&str>, timeout: u64, format: OutputFormat) -> Result<()> {
     match args.command {
+        SiteCommand::List => {
+            send::send_and_print(instance, timeout, format, "getSiteList", serde_json::json!(null))?;
+        }
         SiteCommand::Config { site_id } => {
             send::send_and_print(instance, timeout, format, "getSiteUserConfig", serde_json::json!({"siteId": site_id}))?;
         }
