@@ -21,6 +21,8 @@ jobs:
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -42,13 +44,22 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package
+      - name: Package (unix)
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../ptd-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz ptd ptd-host
           cd ../../..
 
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/ptd.exe","target/${{ matrix.target }}/release/ptd-host.exe" -DestinationPath "ptd-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: ptd-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+          files: |
+            ptd-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            ptd-cli-${{ github.ref_name }}-${{ matrix.target }}.zip
