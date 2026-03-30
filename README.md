@@ -27,14 +27,21 @@ Three components:
 
 ## Install
 
-### Build from source
+### 1. Build from source
 
 ```bash
 cargo build --release
 # Produces target/release/ptd and target/release/ptd-host
 ```
 
-### Register the native messaging host
+Place both `ptd` and `ptd-host` in the same directory, and add it to your `PATH`.
+
+### 2. Register the native messaging host
+
+> **Important:** Complete this step **before** installing or enabling the PT-Depiler extension.
+> Chrome only reads native messaging host registrations at startup.
+> If you register the host while Chrome is already running, you must **fully quit Chrome** (including background processes) and relaunch it.
+> On Windows, use `taskkill /f /im chrome.exe` or check the system tray — simply closing the window is not enough if "Continue running background apps when Google Chrome is closed" is enabled.
 
 ```bash
 # Chrome
@@ -50,11 +57,17 @@ ptd install --browser edge --extension-id <ID>
 
 Find your extension ID at `chrome://extensions` with Developer Mode enabled.
 
-After installing, reload the PT-Depiler extension. Verify with:
+### 3. Verify
 
 ```bash
 ptd status
+# Should show a healthy instance
 ```
+
+If `ptd status` shows no instances, make sure:
+1. The browser is running with the PT-Depiler extension enabled
+2. You fully restarted the browser after running `ptd install`
+3. The extension has the `nativeMessaging` permission
 
 ## Usage
 
