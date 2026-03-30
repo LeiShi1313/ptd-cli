@@ -20,7 +20,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
         .context("cannot determine current executable path")?
         .parent()
         .context("executable has no parent directory")?
-        .join("ptd-host");
+        .join(if cfg!(windows) { "ptd-host.exe" } else { "ptd-host" });
 
     if !host_binary.exists() {
         anyhow::bail!(
