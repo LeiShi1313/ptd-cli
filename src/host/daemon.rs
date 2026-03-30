@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
+use interprocess::local_socket::{
+    tokio::{prelude::*, Listener, Stream},
+    ListenerOptions,
+};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixListener;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -37,12 +40,15 @@ pub async fn run() -> Result<()> {
     let instance_id = hello.instance_id.clone();
     info!(instance_id = %instance_id, browser = %hello.browser, "received hello");
 
-    // Step 2: Publish registry and socket
+    // Step 2: Publish registry and bind IPC listener
     registry::publish(&hello)?;
-    let socket_path = paths::instance_socket_path(&instance_id);
-    let listener = UnixListener::bind(&socket_path)
-        .context("failed to bind instance socket")?;
-    info!(path = %socket_path.display(), "socket published");
+    let ipc_name = paths::instance_ipc_name(&instance_id);
+    let name = create_ipc_name(&ipc_name)?;
+    let listener = ListenerOptions::new()
+        .name(name)
+        .create_tokio()
+        .context("failed to bind IPC listener")?;
+    info!(ipc_name = %ipc_name, "IPC listener published");
 
     // Step 3: Run the main select loop
     let router = Arc::new(Mutex::new(Router::new()));
@@ -59,7 +65,7 @@ pub async fn run() -> Result<()> {
 async fn main_loop(
     stdin: &mut io::Stdin,
     stdout: Arc<Mutex<io::Stdout>>,
-    listener: UnixListener,
+    listener: Listener,
     router: Arc<Mutex<Router>>,
 ) -> Result<()> {
     loop {
@@ -85,9 +91,9 @@ async fn main_loop(
                 }
             }
 
-            // Branch 2: New CLI client connection on socket
+            // Branch 2: New CLI client connection on IPC socket
             accept = listener.accept() => {
-                let (stream, _addr) = accept.context("failed to accept CLI connection")?;
+                let stream = accept.context("failed to accept CLI connection")?;
                 debug!("new CLI client connected");
                 let router = router.clone();
                 let stdout = stdout.clone();
@@ -104,11 +110,12 @@ async fn main_loop(
 }
 
 async fn handle_cli_client(
-    stream: tokio::net::UnixStream,
+    stream: Stream,
     router: Arc<Mutex<Router>>,
     stdout: Arc<Mutex<io::Stdout>>,
 ) -> Result<()> {
-    let (reader, mut writer) = stream.into_split();
+    let (reader, writer) = tokio::io::split(stream);
+    let mut writer = writer;
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
@@ -177,4 +184,25 @@ async fn handle_cli_client(
     writer.flush().await?;
 
     Ok(())
+}
+
+/// Create a platform-appropriate IPC name.
+///
+/// On Unix, uses filesystem path via `GenericFilePath`.
+/// On Windows, uses namespaced pipe name via `GenericNamespaced`.
+fn create_ipc_name(ipc_name: &str) -> Result<interprocess::local_socket::Name<'_>> {
+    #[cfg(unix)]
+    {
+        use interprocess::local_socket::{GenericFilePath, ToFsName};
+        ipc_name
+            .to_fs_name::<GenericFilePath>()
+            .context("failed to create IPC name")
+    }
+    #[cfg(windows)]
+    {
+        use interprocess::local_socket::{GenericNamespaced, ToNsName};
+        ipc_name
+            .to_ns_name::<GenericNamespaced>()
+            .context("failed to create IPC name")
+    }
 }

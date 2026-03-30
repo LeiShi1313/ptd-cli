@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyhow::Result;
 
 use crate::cli::client;
@@ -16,12 +14,10 @@ pub fn send_and_print(
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let registry = discovery::select_instance(instance)?;
-    let socket_path_str = registry.socket_path.clone();
-    let socket_path = Path::new(&socket_path_str);
 
     let rt = tokio::runtime::Runtime::new()?;
     let response: ResponseMessage =
-        rt.block_on(client::send_request(socket_path, method, params, timeout))?;
+        rt.block_on(client::send_request(&registry.socket_path, method, params, timeout))?;
 
     if let Some(error) = response.error {
         anyhow::bail!("[{}] {}", error.code, error.message);
@@ -40,12 +36,10 @@ pub fn send_raw(
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let registry = discovery::select_instance(instance)?;
-    let socket_path_str = registry.socket_path.clone();
-    let socket_path = Path::new(&socket_path_str);
 
     let rt = tokio::runtime::Runtime::new()?;
     let response: ResponseMessage =
-        rt.block_on(client::send_request(socket_path, method, params, timeout))?;
+        rt.block_on(client::send_request(&registry.socket_path, method, params, timeout))?;
 
     if let Some(error) = response.error {
         anyhow::bail!("[{}] {}", error.code, error.message);

@@ -1,28 +1,37 @@
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream as StdUnixStream;
-use std::path::Path;
-
 use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::shared::paths;
 use crate::shared::protocol::{HelloMessage, InstanceRegistry};
 
-/// Attempt to connect to an existing socket to check if it's alive.
-fn is_socket_alive(path: &Path) -> bool {
-    match StdUnixStream::connect(path) {
-        Ok(stream) => {
-            let _ = stream.shutdown(Shutdown::Both);
-            true
+/// Attempt to connect to an existing IPC endpoint to check if it's alive.
+///
+/// On Unix, this connects to a filesystem socket path.
+/// On Windows, this connects to a named pipe.
+fn is_ipc_alive(ipc_name: &str) -> bool {
+    use interprocess::local_socket::prelude::*;
+    #[cfg(unix)]
+    {
+        use interprocess::local_socket::GenericFilePath;
+        match ipc_name.to_fs_name::<GenericFilePath>() {
+            Ok(name) => LocalSocketStream::connect(name).is_ok(),
+            Err(_) => false,
         }
-        Err(_) => false,
+    }
+    #[cfg(windows)]
+    {
+        use interprocess::local_socket::GenericNamespaced;
+        match ipc_name.to_ns_name::<GenericNamespaced>() {
+            Ok(name) => LocalSocketStream::connect(name).is_ok(),
+            Err(_) => false,
+        }
     }
 }
 
-/// Publish instance registry file and prepare the socket path.
+/// Publish instance registry file and prepare the IPC endpoint.
 /// Returns an error if a live daemon already owns this instance.
 pub fn publish(hello: &HelloMessage) -> Result<()> {
-    let socket_path = paths::instance_socket_path(&hello.instance_id);
+    let ipc_name = paths::instance_ipc_name(&hello.instance_id);
     let registry_path = paths::instance_registry_path(&hello.instance_id);
 
     // Ensure directories exist
@@ -32,16 +41,20 @@ pub fn publish(hello: &HelloMessage) -> Result<()> {
         .context("failed to create logs directory")?;
 
     // Check for existing live daemon
-    if socket_path.exists() && is_socket_alive(&socket_path) {
+    if is_ipc_alive(&ipc_name) {
         anyhow::bail!(
             "another daemon is already running for instance {}",
             hello.instance_id
         );
     }
 
-    // Remove stale artifacts
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path).ok();
+    // Remove stale socket file on Unix (named pipes on Windows have no file to remove)
+    #[cfg(unix)]
+    {
+        let socket_file = std::path::Path::new(&ipc_name);
+        if socket_file.exists() {
+            std::fs::remove_file(socket_file).ok();
+        }
     }
     if registry_path.exists() {
         std::fs::remove_file(&registry_path).ok();
@@ -53,7 +66,7 @@ pub fn publish(hello: &HelloMessage) -> Result<()> {
         browser: hello.browser.clone(),
         extension_id: hello.extension_id.clone(),
         version: hello.version.clone(),
-        socket_path: socket_path.to_string_lossy().into_owned(),
+        socket_path: ipc_name,
         connected_at: now.clone(),
         last_seen_at: now,
     };
@@ -66,14 +79,19 @@ pub fn publish(hello: &HelloMessage) -> Result<()> {
     Ok(())
 }
 
-/// Remove instance socket and registry files.
+/// Remove instance IPC artifacts and registry files.
 pub fn cleanup(instance_id: &str) {
-    let socket_path = paths::instance_socket_path(instance_id);
-    let registry_path = paths::instance_registry_path(instance_id);
-
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path).ok();
+    // Remove socket file on Unix (named pipes on Windows have no file to remove)
+    #[cfg(unix)]
+    {
+        let ipc_name = paths::instance_ipc_name(instance_id);
+        let socket_file = std::path::Path::new(&ipc_name);
+        if socket_file.exists() {
+            std::fs::remove_file(socket_file).ok();
+        }
     }
+
+    let registry_path = paths::instance_registry_path(instance_id);
     if registry_path.exists() {
         std::fs::remove_file(&registry_path).ok();
     }
@@ -101,10 +119,9 @@ pub fn list_all() -> Result<Vec<InstanceRegistry>> {
     Ok(entries)
 }
 
-/// Check if an instance's socket is alive.
+/// Check if an instance's IPC endpoint is alive.
 pub fn is_instance_healthy(registry: &InstanceRegistry) -> bool {
-    let socket_path = Path::new(&registry.socket_path);
-    socket_path.exists() && is_socket_alive(socket_path)
+    is_ipc_alive(&registry.socket_path)
 }
 
 /// Remove stale registry entries whose sockets are gone.

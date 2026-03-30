@@ -14,9 +14,23 @@ pub fn instances_dir() -> PathBuf {
     ptd_home().join(INSTANCES_DIR)
 }
 
-/// Path to an instance's Unix domain socket.
-pub fn instance_socket_path(instance_id: &str) -> PathBuf {
-    instances_dir().join(format!("{instance_id}.sock"))
+/// IPC endpoint name for an instance.
+///
+/// On Unix this is a filesystem path to a Unix domain socket.
+/// On Windows this is a named pipe identifier (the interprocess crate
+/// prepends `\\.\pipe\` automatically via `GenericNamespaced`).
+pub fn instance_ipc_name(instance_id: &str) -> String {
+    #[cfg(unix)]
+    {
+        instances_dir()
+            .join(format!("{instance_id}.sock"))
+            .to_string_lossy()
+            .into_owned()
+    }
+    #[cfg(windows)]
+    {
+        format!("ptd-{instance_id}")
+    }
 }
 
 /// Path to an instance's registry metadata JSON file.
