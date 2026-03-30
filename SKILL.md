@@ -7,7 +7,7 @@ description: Use when the user asks to search torrents, download torrents, check
 
 CLI for the PT-Depiler browser extension via Chrome Native Messaging. All operations execute through the running browser extension, reusing its cookies, site definitions, and downloader configurations.
 
-Binary location: `~/workspace/created/ptd-cli/target/release/ptd`
+Binary location: `C:\Users\leish\bin\ptd.exe`
 
 ## Prerequisites
 
@@ -15,14 +15,45 @@ Binary location: `~/workspace/created/ptd-cli/target/release/ptd`
 - Native host installed: `ptd install --browser chrome --extension-id <ID>`
 - Verify: `ptd status` should show a healthy instance
 
+## IMPORTANT: Always discover site IDs and downloader IDs first
+
+**NEVER guess site IDs or downloader IDs.** They are internal identifiers that don't always match the site's display name (e.g., PTerClub's site ID is `pter`, not `pterclub`).
+
+Before performing ANY site-specific or downloader-specific operation, you MUST first retrieve the available sites and downloaders:
+
+### List all configured sites
+
+```bash
+# Search for test on all enabled sites - this reveals all site IDs
+ptd search "test" --timeout 10 2>&1 | head -20
+# The stderr output shows lines like: [pter] success: 5 results
+# The bracketed values are the actual site IDs to use
+```
+
+### List all configured downloaders
+
+```bash
+# Get extension metadata which contains downloader configs
+# Use the raw protocol: send getExtStorage with key "metadata"
+# Then look at the "clients" field for downloader IDs and names
+ptd downloader config <downloader-id> --pretty
+```
+
+Since there is no `ptd downloader list` command, check the download history to discover downloader IDs:
+
+```bash
+ptd download-history --pretty | head -50
+# Look for "downloaderId" fields in the output
+```
+
 ## Commands
 
 ### Search
 
 ```bash
 ptd search "keyword"                          # All configured sites
-ptd search "keyword" --site chdbits           # Specific site
-ptd search "keyword" --site a --site b        # Multiple sites
+ptd search "keyword" --site pter              # Specific site (use discovered site ID!)
+ptd search "keyword" --site pter --site mteam # Multiple sites
 ptd search "keyword" --pretty                 # Human-readable output
 ```
 
@@ -35,7 +66,7 @@ ptd download 0 --downloader <downloader-id>   # By index from last search
 ptd download --option-file ./dl.json           # Full option payload
 ```
 
-The downloader ID is the internal key (e.g. `6JsFPshE1tXYVUVmh_ZL_`), not the human name. Find it via `ptd downloader config <name>` or `ptd download-history --pretty`.
+The downloader ID is the internal key (e.g. `6JsFPshE1tXYVUVmh_ZL_`), not the human name. Discover it from download history or site config.
 
 ### User Info
 
@@ -73,8 +104,8 @@ ptd status                                    # Running browser instances
 Default output is compact JSON, pipe to `jq` for filtering:
 
 ```bash
-ptd search "test" --site chdbits | jq '.[0].title'
-ptd user-info current chdbits | jq '.ratio'
+ptd search "test" --site pter | jq '.[0].title'
+ptd user-info current pter | jq '.ratio'
 ```
 
 ## Exit Codes
@@ -90,3 +121,4 @@ ptd user-info current chdbits | jq '.ratio'
 - **Download workflow**: search → pick index → download with downloader ID
 - **Instance auto-select**: works automatically with one browser; use `--instance` prefix match with multiple
 - **Extension must be initialized**: open the extension options page at least once to populate site/downloader config
+- **Always discover IDs first**: never assume site IDs or downloader IDs — always query them from the extension before use
