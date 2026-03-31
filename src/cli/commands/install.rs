@@ -10,9 +10,10 @@ pub struct InstallArgs {
     #[arg(long)]
     pub browser: BrowserFamily,
 
-    /// Extension ID (required for Chrome-family browsers).
-    /// Can be specified multiple times for multi-browser setups sharing one manifest
-    /// (e.g. `--extension-id <chrome-id> --extension-id <edge-id>`).
+    /// Extension ID for Chrome-family browsers.
+    /// Defaults to the official Web Store / Add-ons ID for the target browser.
+    /// Can be specified multiple times to allow additional IDs
+    /// (e.g. for unpacked development builds).
     #[arg(long)]
     pub extension_id: Vec<String>,
 }
@@ -45,15 +46,28 @@ pub fn run(args: InstallArgs) -> Result<()> {
             "allowed_extensions": ["ptdepiler.ptplugins@gmail.com"]
         })
     } else {
-        if args.extension_id.is_empty() {
-            eprintln!("--extension-id is required for Chrome-family browsers.");
-            eprintln!("Find it at chrome://extensions with Developer Mode enabled.");
-            eprintln!("Multiple IDs can be specified: --extension-id <id1> --extension-id <id2>");
-            std::process::exit(1);
-        }
+        // Official extension IDs from the Chrome Web Store / Edge Add-ons.
+        let default_ids: &[&str] = match args.browser {
+            BrowserFamily::Chrome => &["iloddidemhbedaopmipajgclofjocogb"],
+            BrowserFamily::Edge => &["kbijhmckhndmeckonoikakdfdlbnlkde"],
+            BrowserFamily::Chromium => &["iloddidemhbedaopmipajgclofjocogb"],
+            _ => &[],
+        };
 
-        let origins: Vec<String> = args
-            .extension_id
+        let ids: Vec<&str> = if args.extension_id.is_empty() {
+            default_ids.to_vec()
+        } else {
+            // User-specified IDs plus the official defaults.
+            let mut combined: Vec<&str> = args.extension_id.iter().map(|s| s.as_str()).collect();
+            for id in default_ids {
+                if !combined.contains(id) {
+                    combined.push(id);
+                }
+            }
+            combined
+        };
+
+        let origins: Vec<String> = ids
             .iter()
             .map(|id| format!("chrome-extension://{id}/"))
             .collect();
