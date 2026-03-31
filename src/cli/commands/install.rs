@@ -10,9 +10,11 @@ pub struct InstallArgs {
     #[arg(long)]
     pub browser: BrowserFamily,
 
-    /// Extension ID (required for Chrome-family browsers)
+    /// Extension ID (required for Chrome-family browsers).
+    /// Can be specified multiple times for multi-browser setups sharing one manifest
+    /// (e.g. `--extension-id <chrome-id> --extension-id <edge-id>`).
     #[arg(long)]
-    pub extension_id: Option<String>,
+    pub extension_id: Vec<String>,
 }
 
 pub fn run(args: InstallArgs) -> Result<()> {
@@ -29,8 +31,9 @@ pub fn run(args: InstallArgs) -> Result<()> {
         );
     }
 
-    let host_path = host_binary
-        .canonicalize()
+    // Use dunce::canonicalize to avoid the \\?\ prefix on Windows,
+    // which some browsers may not handle correctly.
+    let host_path = dunce::canonicalize(&host_binary)
         .context("failed to resolve ptd-host path")?;
 
     let manifest = if args.browser.is_firefox() {
@@ -42,17 +45,45 @@ pub fn run(args: InstallArgs) -> Result<()> {
             "allowed_extensions": ["ptdepiler.ptplugins@gmail.com"]
         })
     } else {
-        let ext_id = args.extension_id.as_deref().unwrap_or_else(|| {
+        if args.extension_id.is_empty() {
             eprintln!("--extension-id is required for Chrome-family browsers.");
             eprintln!("Find it at chrome://extensions with Developer Mode enabled.");
+            eprintln!("Multiple IDs can be specified: --extension-id <id1> --extension-id <id2>");
             std::process::exit(1);
-        });
+        }
+
+        let origins: Vec<String> = args
+            .extension_id
+            .iter()
+            .map(|id| format!("chrome-extension://{id}/"))
+            .collect();
+
+        // If a manifest already exists, merge in any existing allowed_origins
+        // so that installing for one browser doesn't break another.
+        let manifest_path = args.browser.native_host_manifest_path();
+        let mut all_origins = origins.clone();
+        if manifest_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(arr) = existing.get("allowed_origins").and_then(|v| v.as_array()) {
+                        for v in arr {
+                            if let Some(s) = v.as_str() {
+                                if !all_origins.contains(&s.to_string()) {
+                                    all_origins.push(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         serde_json::json!({
             "name": NATIVE_HOST_NAME,
             "description": "PT-Depiler CLI Native Messaging Host",
             "path": host_path.to_string_lossy(),
             "type": "stdio",
-            "allowed_origins": [format!("chrome-extension://{ext_id}/")]
+            "allowed_origins": all_origins
         })
     };
 
